@@ -13,7 +13,25 @@ const config = {
   maxLambdaSize: '10mb',
 };
 
-async function build({ files, entrypoint }) {
+async function gatherExtraFiles(globMatcher, entrypoint) {
+  if (!globMatcher) return {};
+
+  console.log('gathering extra files for the fs...');
+
+  const entryDir = path.dirname(entrypoint);
+
+  if (Array.isArray(globMatcher)) {
+    const allMatches = await Promise.all(
+      globMatcher.map(pattern => glob(pattern, entryDir)),
+    );
+
+    return allMatches.reduce((acc, matches) => ({ ...acc, ...matches }), {});
+  }
+
+  return glob(globMatcher, entryDir);
+}
+
+async function build({ files, entrypoint, config }) {
   console.log('Downloading user files...');
 
   const [goPath, outDir] = await Promise.all([
@@ -195,8 +213,14 @@ async function build({ files, entrypoint }) {
     }
   }
 
+  const entryPath = downloadedFiles[entrypoint].fsPath;
+  const extraFiles = await gatherExtraFiles(config.includeFiles, entryPath);
+
   const lambda = await createLambda({
-    files: await glob('**', outDir),
+    files: {
+      ...extraFiles,
+      ...await glob('**', outDir)
+    },
     handler: 'handler',
     runtime: 'go1.x',
     environment: {},
